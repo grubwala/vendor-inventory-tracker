@@ -4,7 +4,7 @@ import type { Item, Vendor, StockRow, CurrentUser, AuditEntry, ID } from './type
 
 // If you have a real component, keep this import.
 // Otherwise, comment it and use the inline placeholder below.
-// import InventoryManager from './components/InventoryManager';asdasd
+// import InventoryManager from './components/InventoryManager';
 
 type Tab = 'overview' | 'warehouse' | 'chef' | 'items' | 'vendors' | 'audit';
 
@@ -89,31 +89,32 @@ export default function App() {
       id: args.id ?? genId(),
     };
 
-   setStock(prev => {
-  const idx = prev.findIndex(r => r.id === normalized.id);
+    setStock(prev => {
+      const idx = prev.findIndex(r => r.id === normalized.id);
 
-  // 1️⃣ If this id is new, insert a new row
-  if (idx === -1) {
-    return [
-      { ...normalized, timestamp: new Date().toISOString() },
-      ...prev,
-    ];
+      // 1️⃣ If this id is new, insert a new row
+      if (idx === -1) {
+        return [
+          { ...normalized, timestamp: new Date().toISOString() },
+          ...prev,
+        ];
+      }
+
+      // 2️⃣ Otherwise update the existing one safely
+      const old = prev[idx];
+      if (!old) return prev;  // ✅ guard so TS knows 'old' is defined
+
+      const updated: StockRow = {
+        ...old,
+        ...normalized,
+        timestamp: old.timestamp ?? new Date().toISOString(),
+      };
+
+      const next = prev.slice();
+      next[idx] = updated;
+      return next;
+    });
   }
-
-  // 2️⃣ Otherwise update the existing one safely
-  const old = prev[idx];
-  if (!old) return prev;  // ✅ guard so TS knows 'old' is defined
-
-  const updated: StockRow = {
-    ...old,
-    ...normalized,
-    timestamp: old.timestamp ?? new Date().toISOString(),
-  };
-
-  const next = prev.slice();
-  next[idx] = updated;
-  return next;
-});
 
 
   async function deleteRow(id: ID) {
