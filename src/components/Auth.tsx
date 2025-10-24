@@ -7,10 +7,20 @@ export default function Auth() {
   const [error, setError] = useState<string|null>(null);
 
   async function signInWithGoogle() {
-    await supabase.auth.signInWithOAuth({
+    setError(null);
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: window.location.origin },
     });
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
+    if (data?.url) {
+      window.location.href = data.url;
+    }
   }
 
   async function signInWithMagic(e: React.FormEvent) {
