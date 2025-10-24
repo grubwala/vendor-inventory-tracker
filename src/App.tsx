@@ -4,7 +4,7 @@ import type { Item, Vendor, StockRow, CurrentUser, AuditEntry, ID } from './type
 
 // If you have a real component, keep this import.
 // Otherwise, comment it and use the inline placeholder below.
-// import InventoryManager from './components/InventoryManager';
+// import InventoryManager from './components/InventoryManager';asdasd
 
 type Tab = 'overview' | 'warehouse' | 'chef' | 'items' | 'vendors' | 'audit';
 
