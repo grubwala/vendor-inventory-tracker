@@ -671,9 +671,6 @@ export default function App() {
   const [stock, setStock] = useRepo<StockRow[]>(LS_KEYS.stock, []);
   const [, setAudit]   = useRepo<AuditRow[]>(LS_KEYS.audit, []);
 
-
-  const [tab, setTab] = useState<"chef" | "warehouse" | "overview" | "items" | "vendors" | "audit">("overview");
-
   useEffect(() => {
     // hook into stock/users/items/vendors changes to create a simple audit trail message (shallow)
     const fn = (action: string, meta?: Record<string, any>) => setAudit(prev => [...prev, { id: uid("aud"), actorUserId: session?.id || "system", action, meta, ts: Date.now() }]);
