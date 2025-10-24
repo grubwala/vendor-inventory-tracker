@@ -200,9 +200,12 @@ export async function upsertProfile(input: {
     .from('profiles')
     .upsert(payload, { onConflict: 'id' })
     .select('id,email,name,role,chef_id')
-    .single<ProfileRow>();
+    .maybeSingle<ProfileRow>();
 
   if (error) throw error;
+  if (!data) {
+    return toProfile(payload);
+  }
   return toProfile(data);
 }
 
