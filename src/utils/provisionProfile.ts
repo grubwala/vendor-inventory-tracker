@@ -1,7 +1,7 @@
 import { supabase } from '../supabaseClient';
 
 const FOUNDER_EMAILS = new Set<string>([
-  'founder@grubwala.com', // add all founder emails here (lowercase)
+  'founder@grubwala.com', // add all founder emails here (lowercase)asd
 ]);
 
 function uuid4() {
