@@ -8,6 +8,7 @@
     "allowImportingTsExtensions": false,
     "isolatedModules": true,
     "jsx": "react-jsx",
+    "types": ["vite/client"],
     "noEmit": true,
 
     /* === Paths === */
