@@ -1,14 +1,18 @@
+// src/types.ts
+
 export type ID = string;
 
+/** Master item kept by Founder */
 export interface Item {
   id: ID;
   name: string;
   unit: 'kg' | 'g' | 'ltr' | 'ml' | 'pcs';
   sku?: string;
-  minStock?: number; // low-stock threshold
+  minStock?: number;     // threshold for low stock warnings
   isActive?: boolean;
 }
 
+/** Vendor/supplier of items */
 export interface Vendor {
   id: ID;
   name: string;
@@ -18,25 +22,38 @@ export interface Vendor {
   isActive?: boolean;
 }
 
+/** One stock movement entry (IN/OUT/ADJUST) */
 export interface StockMovement {
   id: ID;
   itemId: ID;
-  vendorId?: ID;            // optional for adjustments without vendor
+  vendorId?: ID;
   type: 'IN' | 'OUT' | 'ADJUST';
   quantity: number;
-  unitCost?: number;        // optional cost tracking
-  timestamp: string;        // ISO
+  unitCost?: number;
+  timestamp: string;        // ISO string
   note?: string;
 }
 
+/** Row shown in the inventory table; may belong to a chef (personal) or warehouse (no chef) */
+export type StockRow = StockMovement & {
+  chefId?: string | null;
+};
+
+/** Minimal user shape used by the app */
+export interface CurrentUser {
+  id: ID;
+  name: string;
+  email: string;
+  role: 'Founder' | 'Home Chef';
+  chefId?: string | null;
+}
+
+/** Simple audit entry; keep action free-form for flexibility */
 export interface AuditEntry {
   id: ID;
-  action:
-    | 'CREATE_ITEM' | 'UPDATE_ITEM' | 'DELETE_ITEM'
-    | 'CREATE_VENDOR' | 'UPDATE_VENDOR' | 'DELETE_VENDOR'
-    | 'STOCK_IN' | 'STOCK_OUT' | 'STOCK_ADJUST';
-  refId?: ID;               // points to item/vendor/stock movement id
+  timestamp: string;
+  actor?: string;            // user id/email
+  action: string;            // e.g., "stock.adjust", "stock.delete"
+  refId?: ID;                // e.g., StockRow id
   meta?: Record<string, unknown>;
-  timestamp: string;        // ISO
-  actor?: string;           // email/uid if you add auth later
 }
