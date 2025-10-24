@@ -2,11 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabaseClient";
 import Auth from "./components/Auth";
 import { ensureProfile } from "./utils/provisionProfile";
-
-import { useItems } from './hooks/useItems';
-import { useVendors } from './hooks/useVendors';
-import { useStock } from './hooks/useStock';
-import { useAudit } from './hooks/useAudit';
+import { useItems } from "./hooks/useItems";
+import { useVendors } from "./hooks/useVendors";
+import { useStock } from "./hooks/useStock";
+import { useAudit } from "./hooks/useAudit";
 
 
 /** ---------- Types for current signed-in user ---------- */
