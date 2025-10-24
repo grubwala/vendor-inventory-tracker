@@ -48,12 +48,12 @@ export interface CurrentUser {
   chefId?: string | null;
 }
 
-/** Simple audit entry; keep action free-form for flexibility */
+/** Simple audit entry (UI-friendly shape) */
 export interface AuditEntry {
   id: ID;
-  timestamp: string;
-  actor?: string;            // user id/email
-  action: string;            // e.g., "stock.adjust", "stock.delete"
-  refId?: ID;                // e.g., StockRow id
+  actor: ID;                // user id/email
+  action: string;           // e.g., "stock.adjust", "stock.delete"
+  timestamp: string;        // ISO
+  refId?: ID;               // e.g., StockRow id
   meta?: Record<string, unknown>;
 }
