@@ -89,30 +89,32 @@ export default function App() {
       id: args.id ?? genId(),
     };
 
-    setStock(prev => {
-      const idx = prev.findIndex(r => r.id === normalized.id);
-      if (idx === -1) {
-        // insert
-        return [
-          {
-            ...normalized,
-            timestamp: new Date().toISOString(),
-          },
-          ...prev,
-        ];
-      }
-      // update (preserve original timestamp)
-      const old = prev[idx];
-      const updated: StockRow = {
-        ...old,
-        ...normalized,
-        timestamp: old.timestamp ?? new Date().toISOString(),
-      };
-      const next = prev.slice();
-      next[idx] = updated;
-      return next;
-    });
+   setStock(prev => {
+  const idx = prev.findIndex(r => r.id === normalized.id);
+
+  // 1️⃣ If this id is new, insert a new row
+  if (idx === -1) {
+    return [
+      { ...normalized, timestamp: new Date().toISOString() },
+      ...prev,
+    ];
   }
+
+  // 2️⃣ Otherwise update the existing one safely
+  const old = prev[idx];
+  if (!old) return prev;  // ✅ guard so TS knows 'old' is defined
+
+  const updated: StockRow = {
+    ...old,
+    ...normalized,
+    timestamp: old.timestamp ?? new Date().toISOString(),
+  };
+
+  const next = prev.slice();
+  next[idx] = updated;
+  return next;
+});
+
 
   async function deleteRow(id: ID) {
     setStock(prev => prev.filter(r => r.id !== id));
