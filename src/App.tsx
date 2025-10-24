@@ -328,8 +328,9 @@ export default function App() {
             <button
               onClick={handleSignOut}
               className="rounded-xl border px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              type="button"
             >
-              Sign out
+              <span>Sign out</span>
             </button>
           </div>
         </div>
