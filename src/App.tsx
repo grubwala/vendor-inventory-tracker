@@ -1,165 +1,333 @@
-// src/App.tsx
-import { useMemo, useState } from 'react';
-import type { Item, Vendor, StockRow, CurrentUser, AuditEntry, ID } from './types';
+import { useEffect, useMemo, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import Auth from './components/Auth';
+import InventoryDashboard from './components/InventoryDashboard';
+import ProfileSetup from './components/ProfileSetup';
+import { useItems } from './hooks/useItems';
+import { useVendors } from './hooks/useVendors';
+import { useStock, type MovementInput } from './hooks/useStock';
+import { useAudit } from './hooks/useAudit';
+import { useChefs } from './hooks/useChefs';
+import {
+  fetchProfile,
+  getActiveSession,
+  onAuthChange,
+  signOut as supabaseSignOut,
+  upsertProfile
+} from './supabaseClient';
+import type { Chef, Item, Profile, Role, StockRow, Vendor } from './types';
 
-// If you have a real component, keep this import.
-// Otherwise, comment it and use the inline placeholder below.
-// import InventoryManager from './components/InventoryManager';
+const INITIAL_ITEMS: Item[] = [
+  { id: 'cnt_100ml', name: '100 ml Container', unit: 'pcs', sku: 'CNT-100', minStock: 50, isActive: true },
+  { id: 'cnt_200ml', name: '200 ml Container', unit: 'pcs', sku: 'CNT-200', minStock: 40, isActive: true },
+  { id: 'cnt_300ml', name: '300 ml Container', unit: 'pcs', sku: 'CNT-300', minStock: 30, isActive: true }
+];
 
-type Tab = 'overview' | 'warehouse' | 'chef' | 'items' | 'vendors' | 'audit';
+const INITIAL_VENDORS: Vendor[] = [
+  { id: 'vendor_alpha', name: 'Alpha Packaging', phone: '9876543210', isActive: true },
+  { id: 'vendor_beta', name: 'Beta Box Co.', phone: '9123456780', isActive: true }
+];
 
-const genId = () =>
-  (globalThis.crypto && 'randomUUID' in globalThis.crypto
-    ? (crypto.randomUUID as () => string)()
-    : Math.random().toString(36).slice(2));
+const INITIAL_CHEFS: Chef[] = [
+  { id: 'chef_aabha', name: 'Chef Aabha — South Delhi', email: 'aabha.chef@example.com', isActive: true },
+  { id: 'chef_riya', name: 'Chef Riya — Gurgaon', email: 'riya.chef@example.com', isActive: true }
+];
 
-/** Placeholder InventoryManager (remove if you have your own component) */
-function InventoryManager(props: {
-  currentUser: CurrentUser;
-  items: Item[];
-  vendors: Vendor[];
-  stock: StockRow[];
-  itemById: Map<string, Item>;
-  vendorById: Map<string, Vendor>;
-  viewMode: 'overview' | 'warehouse' | 'chef';
-  onAdjust: (args: Omit<StockRow, 'id' | 'timestamp'> & { id?: ID }) => Promise<void>;
-  onDeleteRow: (id: ID) => Promise<void>;
-}) {
-  const { viewMode, stock } = props;
-  return (
-    <div className="rounded-2xl border p-4">
-      <h2 className="text-lg font-semibold mb-3">Inventory — {viewMode}</h2>
-      <p className="text-sm text-gray-600 mb-3">Rows: {stock.length}</p>
-      <div className="text-xs text-gray-500">This is a placeholder. Replace with your real UI.</div>
-    </div>
-  );
-}
+const INITIAL_MOVEMENTS: StockRow[] = [
+  {
+    id: 'mv_warehouse_seed',
+    itemId: 'cnt_200ml',
+    vendorId: 'vendor_alpha',
+    type: 'IN',
+    quantity: 120,
+    timestamp: new Date('2024-02-01T10:00:00Z').toISOString(),
+    chefId: null,
+    note: 'Opening stock received at warehouse'
+  },
+  {
+    id: 'mv_ship_aabha',
+    itemId: 'cnt_200ml',
+    vendorId: 'vendor_alpha',
+    type: 'OUT',
+    quantity: 30,
+    timestamp: new Date('2024-02-03T09:30:00Z').toISOString(),
+    chefId: 'chef_aabha',
+    note: 'Dispatched for Sunday brunch service'
+  },
+  {
+    id: 'mv_ship_riya',
+    itemId: 'cnt_100ml',
+    vendorId: 'vendor_beta',
+    type: 'OUT',
+    quantity: 40,
+    timestamp: new Date('2024-02-05T07:15:00Z').toISOString(),
+    chefId: 'chef_riya',
+    note: 'Packed tasting menu kits'
+  }
+];
 
 export default function App() {
-  // ---- Auth / user (adjust to your auth bootstrap) ----
-  const [currentUser] = useState<CurrentUser>({
-    id: 'u_1',
-    name: 'Aabha Dogra',
-    email: 'aabha@example.com',
-    role: 'Founder',         // or 'Home Chef'
-    chefId: null,            // set for Home Chef accounts
-  });
+  const { items, addItem, byId: itemById } = useItems(INITIAL_ITEMS);
+  const { vendors, addVendor, byId: vendorById } = useVendors(INITIAL_VENDORS);
+  const { chefs, addChef, byId: chefById } = useChefs(INITIAL_CHEFS);
+  const stock = useStock(INITIAL_MOVEMENTS);
+  const { audit, log: logAudit } = useAudit();
 
-  const isFounder = currentUser.role === 'Founder';
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
-  // ---- Tabs ----
-  const [tab, setTab] = useState<Tab>('overview');
+  useEffect(() => {
+    let active = true;
 
-  // ---- App state (replace with hooks/server data) ----
-  const [items, setItems] = useState<Item[]>([
-    { id: 'it_flour', name: 'Flour', unit: 'kg', sku: 'F-001', minStock: 5, isActive: true },
-    { id: 'it_oil', name: 'Oil', unit: 'ltr', sku: 'O-050', minStock: 2, isActive: true },
-  ]);
-
-  const [vendors, setVendors] = useState<Vendor[]>([
-    { id: 'v_alpha', name: 'Alpha Foods', phone: '9999999999', isActive: true },
-  ]);
-
-  const [stock, setStock] = useState<StockRow[]>([
-    {
-      id: 's1',
-      itemId: 'it_flour',
-      vendorId: 'v_alpha',
-      type: 'IN',
-      quantity: 10,
-      unitCost: 45,
-      timestamp: new Date().toISOString(),
-      chefId: null,
-      note: 'Initial stock',
-    }
-  ]);
-
-  const [audit, setAudit] = useState<AuditEntry[]>([]);
-
-  // ---- Derived maps ----
-  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
-  const vendorById = useMemo(() => new Map(vendors.map(v => [v.id, v])), [vendors]);
-
-  // ---- Actions (local state version; wire to Supabase later) ----
-  async function upsertStock(args: Omit<StockRow, 'id' | 'timestamp'> & { id?: ID }) {
-    // normalize chefId: null represents "warehouse"
-    const normalized: Omit<StockRow, 'timestamp'> = {
-      ...args,
-      chefId: args.chefId ?? null,
-      id: args.id ?? genId(),
+    const bootstrap = async () => {
+      try {
+        const current = await getActiveSession();
+        if (active) setSession(current);
+      } catch (error) {
+        if (error instanceof Error) {
+          // eslint-disable-next-line no-console
+          console.warn('[app] Failed to get active session', error.message);
+        }
+      } finally {
+        if (active) setAuthReady(true);
+      }
     };
 
-    setStock(prev => {
-      const idx = prev.findIndex(r => r.id === normalized.id);
+    bootstrap();
+    const unsubscribe = onAuthChange((_event, nextSession) => {
+      setSession(nextSession ?? null);
+    });
 
-      // 1️⃣ If this id is new, insert a new row
-      if (idx === -1) {
-        return [
-          { ...normalized, timestamp: new Date().toISOString() },
-          ...prev,
-        ];
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!session) {
+      setProfile(null);
+      return;
+    }
+
+    let cancelled = false;
+    setProfileLoading(true);
+
+    const loadProfile = async () => {
+      try {
+        const dbProfile = await fetchProfile();
+        if (cancelled) return;
+        const fallback: Profile = {
+          id: session.user.id,
+          email: session.user.email ?? '',
+          name: session.user.user_metadata?.full_name ?? session.user.email ?? 'User',
+          role: dbProfile?.role ?? null,
+          chefId: dbProfile?.chefId ?? null
+        };
+        setProfile(dbProfile ?? fallback);
+      } finally {
+        if (!cancelled) setProfileLoading(false);
+      }
+    };
+
+    loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  const handleSignOut = async () => {
+    await supabaseSignOut();
+    setSession(null);
+    setProfile(null);
+  };
+
+  const handleAddChef = (
+    partial: Omit<Chef, 'id'>,
+    scope: 'founder' | 'chef' = 'founder',
+    actorOverride?: string
+  ) => {
+    const chef = addChef(partial);
+    logAudit({
+      actor: actorOverride ?? profile?.id ?? 'system',
+      action: 'chef.create',
+      scope,
+      chefId: chef.id,
+      meta: { name: chef.name, email: chef.email }
+    });
+    return chef;
+  };
+
+  const handleAddItem = (partial: Omit<Item, 'id'>) => {
+    const item = addItem(partial);
+    logAudit({
+      actor: profile?.id ?? 'system',
+      action: 'catalog.item.create',
+      scope: 'founder',
+      chefId: null,
+      meta: { name: item.name, unit: item.unit, sku: item.sku }
+    });
+    return item;
+  };
+
+  const handleAddVendor = (partial: Omit<Vendor, 'id'>) => {
+    const vendor = addVendor(partial);
+    logAudit({
+      actor: profile?.id ?? 'system',
+      action: 'catalog.vendor.create',
+      scope: 'founder',
+      chefId: null,
+      meta: { name: vendor.name, phone: vendor.phone }
+    });
+    return vendor;
+  };
+
+  const handleRecordMovement = async (payload: MovementInput) => {
+    if (!profile) throw new Error('Profile not ready yet.');
+    const movement = stock.addMovement(payload);
+    const item = itemById.get(payload.itemId);
+    const vendor = payload.vendorId ? vendorById.get(payload.vendorId) : null;
+    const ownerName = payload.chefId ? chefById.get(payload.chefId)?.name ?? payload.chefId : 'Warehouse';
+
+    logAudit({
+      actor: profile.id,
+      action: `stock.${payload.type.toLowerCase()}`,
+      scope: payload.chefId ? 'chef' : 'founder',
+      chefId: payload.chefId ?? null,
+      refId: movement.id,
+      meta: {
+        item: item?.name ?? payload.itemId,
+        vendor: vendor?.name ?? null,
+        quantity: payload.quantity,
+        note: payload.note ?? null,
+        owner: ownerName
+      }
+    });
+  };
+
+  const handleProfileComplete = async (payload: { role: Role; chefId?: string | null; chefName?: string }) => {
+    if (!session) return;
+    setProfileSaving(true);
+    setProfileError(null);
+
+    try {
+      let chefId = payload.chefId ?? null;
+      if (payload.role === 'Home Chef') {
+        if (!chefId && payload.chefName) {
+          const created = handleAddChef(
+            {
+              name: payload.chefName,
+              email: session.user.email ?? undefined,
+              isActive: true
+            },
+            'chef',
+            session.user.id
+          );
+          chefId = created.id;
+        }
+        if (!chefId) {
+          throw new Error('Select a kitchen or create a new one to continue.');
+        }
       }
 
-      // 2️⃣ Otherwise update the existing one safely
-      const old = prev[idx];
-      if (!old) return prev;  // ✅ guard so TS knows 'old' is defined
+      const updated = await upsertProfile({
+        userId: session.user.id,
+        email: session.user.email ?? '',
+        name: session.user.user_metadata?.full_name ?? session.user.email ?? 'User',
+        role: payload.role,
+        chefId
+      });
 
-      const updated: StockRow = {
-        ...old,
-        ...normalized,
-        timestamp: old.timestamp ?? new Date().toISOString(),
-      };
+      const finalProfile: Profile =
+        updated ?? {
+          id: session.user.id,
+          email: session.user.email ?? '',
+          name: session.user.user_metadata?.full_name ?? session.user.email ?? 'User',
+          role: payload.role,
+          chefId
+        };
 
-      const next = prev.slice();
-      next[idx] = updated;
-      return next;
-    });
+      setProfile(finalProfile);
+
+      logAudit({
+        actor: session.user.id,
+        action: `profile.role.${payload.role === 'Founder' ? 'founder' : 'chef'}`,
+        scope: payload.role === 'Founder' ? 'founder' : 'chef',
+        chefId: chefId ?? null,
+        meta: { email: session.user.email, name: finalProfile.name }
+      });
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : 'Unable to save profile.');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const sessionName = useMemo(() => {
+    if (profile?.name) return profile.name;
+    if (session?.user.user_metadata?.full_name) return session.user.user_metadata.full_name;
+    return session?.user.email ?? 'User';
+  }, [profile?.name, session]);
+
+  if (!authReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 text-sm text-gray-500">
+        Checking session...
+      </div>
+    );
   }
 
-
-  async function deleteRow(id: ID) {
-    setStock(prev => prev.filter(r => r.id !== id));
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Auth />
+      </div>
+    );
   }
 
-  type LogInput = { actor: ID; action: string; meta?: Record<string, unknown>; refId?: ID };
-  async function log({ actor, action, meta, refId }: LogInput) {
-    const entry: AuditEntry = {
-      id: genId(),
-      actor,
-      action,
-      timestamp: new Date().toISOString(),
-      refId,
-      meta,
-    };
-    setAudit(prev => [entry, ...prev]);
+  if (profileLoading || !profile) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 text-sm text-gray-500">
+        Loading your profile...
+      </div>
+    );
   }
 
-  async function signOut() {
-    // If you have Supabase auth, call supabase.auth.signOut() here.
-    // For now, no-op to avoid build errors.
-    return;
+  if (!profile.role) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <ProfileSetup
+          email={profile.email}
+          displayName={sessionName}
+          chefs={chefs}
+          onSubmit={handleProfileComplete}
+          submitting={profileSaving}
+          serverError={profileError}
+        />
+      </div>
+    );
   }
 
-  // ---- Render ----
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="border-b">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="grid">
-              <span className="font-semibold">Grubwala — Vendor Inventory</span>
-              <span className="text-xs text-gray-500">Track items, vendors, and stock across warehouse & kitchens</span>
-            </div>
+    <div className="min-h-screen bg-gray-50">
+      <header className="border-b bg-white">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
+          <div>
+            <p className="text-sm font-semibold text-emerald-700">Grubwala Inventory</p>
+            <p className="text-xs text-gray-500">Track containers for founders and home chefs in one dashboard.</p>
           </div>
-
-          <div className="flex items-center gap-3">
-            <div className="text-sm text-gray-600">
-              {currentUser.name} • {currentUser.email}
+          <div className="flex items-center gap-3 text-sm text-gray-700">
+            <div className="text-right">
+              <div className="font-medium">{sessionName}</div>
+              <div className="text-xs text-gray-500">{profile.role}</div>
             </div>
             <button
-              onClick={signOut}
-              className="px-3 py-2 rounded-xl border text-sm hover:bg-gray-50"
+              onClick={handleSignOut}
+              className="rounded-xl border px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               Sign out
             </button>
@@ -167,166 +335,21 @@ export default function App() {
         </div>
       </header>
 
-      {/* Tabs */}
-      <div className="max-w-6xl mx-auto px-4 mt-4">
-        <div className="flex flex-wrap gap-2 mb-4">
-          <button
-            className={`px-3 py-2 rounded-xl border text-sm ${tab === 'overview' ? 'bg-emerald-50 border-emerald-200' : ''}`}
-            onClick={() => setTab('overview')}
-          >
-            Overview
-          </button>
-          <button
-            className={`px-3 py-2 rounded-xl border text-sm ${tab === 'warehouse' ? 'bg-emerald-50 border-emerald-200' : ''}`}
-            onClick={() => setTab('warehouse')}
-          >
-            Warehouse
-          </button>
-          <button
-            className={`px-3 py-2 rounded-xl border text-sm ${tab === 'chef' ? 'bg-emerald-50 border-emerald-200' : ''}`}
-            onClick={() => setTab('chef')}
-          >
-            My Inventory
-          </button>
-          <button
-            disabled={!isFounder}
-            className={`px-3 py-2 rounded-xl border text-sm ${tab === 'items' ? 'bg-emerald-50 border-emerald-200' : ''} ${!isFounder ? 'opacity-50 cursor-not-allowed' : ''}`}
-            onClick={() => isFounder && setTab('items')}
-          >
-            Items (Founder)
-          </button>
-          <button
-            className={`px-3 py-2 rounded-xl border text-sm ${tab === 'vendors' ? 'bg-emerald-50 border-emerald-200' : ''}`}
-            onClick={() => setTab('vendors')}
-          >
-            Vendors
-          </button>
-          <button
-            className={`px-3 py-2 rounded-xl border text-sm ${tab === 'audit' ? 'bg-emerald-50 border-emerald-200' : ''}`}
-            onClick={() => setTab('audit')}
-          >
-            Audit
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="space-y-4 mb-10">
-          {tab === 'overview' && (
-            <InventoryManager
-              currentUser={currentUser}
-              items={items}
-              vendors={vendors}
-              stock={stock}
-              itemById={itemById}
-              vendorById={vendorById}
-              viewMode="overview"
-              onAdjust={async (args) => {
-                await upsertStock(args);
-                await log({ actor: currentUser.id, action: 'stock.adjust', meta: args });
-              }}
-              onDeleteRow={async (id) => {
-                await deleteRow(id);
-                await log({ actor: currentUser.id, action: 'stock.delete', meta: { id }, refId: id });
-              }}
-            />
-          )}
-
-          {tab === 'warehouse' && (
-            <InventoryManager
-              currentUser={currentUser}
-              items={items}
-              vendors={vendors}
-              stock={stock.filter((s: StockRow) => !s.chefId)}
-              itemById={itemById}
-              vendorById={vendorById}
-              viewMode="warehouse"
-              onAdjust={async (args) => {
-                await upsertStock({ ...args, chefId: null });
-                await log({ actor: currentUser.id, action: 'stock.adjust', meta: args });
-              }}
-              onDeleteRow={async (id) => {
-                await deleteRow(id);
-                await log({ actor: currentUser.id, action: 'stock.delete', meta: { id }, refId: id });
-              }}
-            />
-          )}
-
-          {tab === 'chef' && (
-            <InventoryManager
-              currentUser={currentUser}
-              items={items}
-              vendors={vendors}
-              stock={stock.filter((s: StockRow) => s.chefId === currentUser.chefId)}
-              itemById={itemById}
-              vendorById={vendorById}
-              viewMode="chef"
-              onAdjust={async (args) => {
-                await upsertStock({ ...args, chefId: currentUser.chefId ?? null });
-                await log({ actor: currentUser.id, action: 'stock.adjust', meta: args });
-              }}
-              onDeleteRow={async (id) => {
-                await deleteRow(id);
-                await log({ actor: currentUser.id, action: 'stock.delete', meta: { id }, refId: id });
-              }}
-            />
-          )}
-
-          {tab === 'items' && isFounder && (
-            <div className="rounded-2xl border p-4">
-              <h2 className="text-lg font-semibold mb-3">Items (Founder)</h2>
-              <button
-                className="px-3 py-2 rounded-xl border text-sm"
-                onClick={() => {
-                  const newItem: Omit<Item, 'id'> = {
-                    name: `Item ${items.length + 1}`,
-                    sku: `SKU-${items.length + 1}`,
-                    unit: 'pcs',
-                    minStock: 1,
-                    isActive: true
-                  };
-                  setItems(prev => [{ id: genId(), ...newItem }, ...prev]);
-                }}
-              >
-                Add sample item
-              </button>
-            </div>
-          )}
-
-          {tab === 'vendors' && (
-            <div className="rounded-2xl border p-4">
-              <h2 className="text-lg font-semibold mb-3">Vendors</h2>
-              <button
-                className="px-3 py-2 rounded-xl border text-sm"
-                onClick={() => {
-                  const newVendor: Omit<Vendor, 'id'> = {
-                    name: `Vendor ${vendors.length + 1}`,
-                    isActive: true
-                  };
-                  setVendors(prev => [{ id: genId(), ...newVendor }, ...prev]);
-                }}
-              >
-                Add sample vendor
-              </button>
-            </div>
-          )}
-
-          {tab === 'audit' && (
-            <div className="rounded-2xl border p-4">
-              <h2 className="text-lg font-semibold mb-3">Audit</h2>
-              <ul className="text-sm space-y-1">
-                {audit.map(a => (
-                  <li key={a.id} className="text-gray-700">
-                    <span className="font-mono text-xs">{a.timestamp}</span>{' '}
-                    <span className="text-gray-500">•</span>{' '}
-                    <span className="font-semibold">{a.action}</span>{' '}
-                    <span className="text-gray-500">by</span> {a.actor}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </div>
+      <main className="mx-auto max-w-6xl px-4 py-6">
+        <InventoryDashboard
+          profile={profile}
+          items={items}
+          vendors={vendors}
+          chefs={chefs}
+          movements={stock.movements}
+          audit={audit}
+          getOnHand={stock.getOnHand}
+          onRecordMovement={handleRecordMovement}
+          onCreateItem={handleAddItem}
+          onCreateVendor={handleAddVendor}
+          onCreateChef={(partial) => handleAddChef(partial, 'founder')}
+        />
+      </main>
     </div>
   );
 }

@@ -2,6 +2,8 @@
 
 export type ID = string;
 
+export type Role = 'Founder' | 'Home Chef';
+
 /** Master item kept by Founder */
 export interface Item {
   id: ID;
@@ -22,6 +24,16 @@ export interface Vendor {
   isActive?: boolean;
 }
 
+/** Home chef profile (inventory owner) */
+export interface Chef {
+  id: ID;
+  name: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  isActive?: boolean;
+}
+
 /** One stock movement entry (IN/OUT/ADJUST) */
 export interface StockMovement {
   id: ID;
@@ -32,19 +44,18 @@ export interface StockMovement {
   unitCost?: number;
   timestamp: string;        // ISO string
   note?: string;
+  chefId?: string | null;   // null → warehouse, value → chef inventory
 }
 
 /** Row shown in the inventory table; may belong to a chef (personal) or warehouse (no chef) */
-export type StockRow = StockMovement & {
-  chefId?: string | null;
-};
+export type StockRow = StockMovement;
 
-/** Minimal user shape used by the app */
-export interface CurrentUser {
+/** Supabase-backed profile for an authenticated user */
+export interface Profile {
   id: ID;
-  name: string;
   email: string;
-  role: 'Founder' | 'Home Chef';
+  name: string;
+  role: Role | null;
   chefId?: string | null;
 }
 
@@ -54,6 +65,8 @@ export interface AuditEntry {
   actor: ID;                // user id/email
   action: string;           // e.g., "stock.adjust", "stock.delete"
   timestamp: string;        // ISO
+  scope: 'founder' | 'chef';
+  chefId?: string | null;   // null when scope === 'founder'
   refId?: ID;               // e.g., StockRow id
   meta?: Record<string, unknown>;
 }
