@@ -325,7 +325,11 @@ export default function App() {
               <div className="font-medium">{sessionName}</div>
               <div className="text-xs text-gray-500">{profile.role}</div>
             </div>
-            <button type="button" onClick={handleSignOut} className="rounded-xl border px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="rounded-xl border px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
               Sign out
             </button>
           </div>
