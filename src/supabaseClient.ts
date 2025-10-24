@@ -1,5 +1,6 @@
 // src/lib/supabaseClient.ts
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient, type Session } from '@supabase/supabase-js';
+import type { Profile, Role } from './types';
 
 /**
  * If you've generated DB types from Supabase, uncomment this import and type the client:
@@ -132,32 +133,100 @@ export function onAuthChange(
  * Call after successful sign-in to ensure a profile row exists.
  * Adjust table/columns to your schema.
  * -------------------------*/
+type ProfileRow = {
+  id: string;
+  email: string | null;
+  name: string | null;
+  role: Role | null;
+  chef_id: string | null;
+};
+
+function toProfile(row: ProfileRow | null): Profile | null {
+  if (!row) return null;
+  return {
+    id: row.id,
+    email: row.email ?? '',
+    name: row.name ?? '',
+    role: row.role ?? null,
+    chefId: row.chef_id ?? null
+  };
+}
+
+export async function fetchProfile(): Promise<Profile | null> {
+  const user = await getUser();
+  if (!user) return null;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id,email,name,role,chef_id')
+    .eq('id', user.id)
+    .maybeSingle<ProfileRow>();
+
+  if (error) {
+    // eslint-disable-next-line no-console
+    console.warn('[supabaseClient] fetchProfile failed', error.message);
+    return null;
+  }
+
+  if (!data) {
+    return {
+      id: user.id,
+      email: user.email ?? '',
+      name: user.user_metadata?.full_name ?? user.email ?? 'User',
+      role: null,
+      chefId: null
+    };
+  }
+
+  return toProfile(data);
+}
+
+export async function upsertProfile(input: {
+  userId: string;
+  email: string;
+  name: string;
+  role: Role;
+  chefId?: string | null;
+}) {
+  const payload = {
+    id: input.userId,
+    email: input.email,
+    name: input.name,
+    role: input.role,
+    chef_id: input.chefId ?? null
+  } satisfies ProfileRow;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .upsert(payload, { onConflict: 'id' })
+    .select('id,email,name,role,chef_id')
+    .single<ProfileRow>();
+
+  if (error) throw error;
+  return toProfile(data);
+}
+
 export async function ensureProfile({
   role,
   chefId
 }: {
-  role: 'Founder' | 'Home Chef';
+  role: Role;
   chefId?: string | null;
 }) {
-  // Example table: public.profiles (id uuid references auth.users, name, email, role, chef_id)
   const user = await getUser();
-  if (!user) return;
+  if (!user) return null;
 
-  // Try to upsert; rely on unique constraint on id
-  await supabase
-    .from('profiles')
-    .upsert(
-      [
-        {
-          id: user.id,
-          email: user.email,
-          name: user.user_metadata?.full_name ?? user.email?.split('@')[0],
-          role,
-          chef_id: chefId ?? null
-        }
-      ],
-      { onConflict: 'id' }
-    )
-    .select()
-    .single();
+  return upsertProfile({
+    userId: user.id,
+    email: user.email ?? '',
+    name: user.user_metadata?.full_name ?? user.email ?? 'User',
+    role,
+    chefId: chefId ?? null
+  });
+}
+
+export async function getActiveSession(): Promise<Session | null> {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  return data.session ?? null;
 }

@@ -1,4 +1,5 @@
 import { supabase } from '../supabaseClient';
+import type { Profile, Role } from '../types';
 
 const FOUNDER_EMAILS = new Set<string>([
   'founder@grubwala.com', // add all founder emails here (lowercase)
@@ -31,7 +32,15 @@ function uuid4() {
   });
 }
 
-export async function ensureProfile(user: { id: string; email?: string | null }) {
+type ProfileRow = {
+  id: string;
+  email: string | null;
+  name: string | null;
+  role: Role | null;
+  chef_id: string | null;
+};
+
+export async function ensureProfile(user: { id: string; email?: string | null }): Promise<Profile | null> {
   const uid = user.id;
   const email = (user.email || '').toLowerCase();
 
@@ -39,8 +48,16 @@ export async function ensureProfile(user: { id: string; email?: string | null })
     .from('profiles')
     .select('id,role,chef_id,name,email')
     .eq('id', uid)
-    .maybeSingle();
-  if (existing) return existing;
+    .maybeSingle<ProfileRow>();
+  if (existing) {
+    return {
+      id: existing.id,
+      email: existing.email ?? '',
+      name: existing.name ?? '',
+      role: existing.role ?? null,
+      chefId: existing.chef_id ?? null
+    };
+  }
 
   const isFounder = email && FOUNDER_EMAILS.has(email);
   const role = isFounder ? 'Founder' : 'Home Chef';
@@ -56,7 +73,13 @@ export async function ensureProfile(user: { id: string; email?: string | null })
       email,
     })
     .select()
-    .single();
+    .single<ProfileRow>();
   if (error) throw error;
-  return data;
+  return {
+    id: data.id,
+    email: data.email ?? '',
+    name: data.name ?? '',
+    role: data.role ?? null,
+    chefId: data.chef_id ?? null
+  };
 }
