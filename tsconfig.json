@@ -5,11 +5,3 @@
     { "path": "./tsconfig.node.json" }
   ]
 }
-{
-  "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist",
-    "moduleResolution": "bundler"
-  },
-  "include": ["src"]
-}
