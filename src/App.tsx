@@ -665,7 +665,6 @@ function AuditPanel() {
 
 export default function App() {
   const { session, setSession } = useSession();
-  const [, setUsers]   = useRepo<User[]>(LS_KEYS.users, []);
   const [items, setItems] = useRepo<Item[]>(LS_KEYS.items, []);
   const [vendors, setVendors] = useRepo<Vendor[]>(LS_KEYS.vendors, []);
   const [stock, setStock] = useRepo<StockRow[]>(LS_KEYS.stock, []);
